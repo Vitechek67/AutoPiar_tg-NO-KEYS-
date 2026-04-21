@@ -2348,12 +2348,16 @@ class OnlineLicenseDialog(QtWidgets.QDialog):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    if OnlineLicenseDialog().exec_() != QtWidgets.QDialog.Accepted:
-        sys.exit(0)
+    
+    # Мы просто убрали проверку условия if и вызов .exec_()
+    # Теперь программа сразу переходит к созданию основного окна
+    
     w = NeonMainWindow()
     w.show()
     sys.exit(app.exec_())
 
-
 if __name__ == "__main__":
     main()
+
+
+
