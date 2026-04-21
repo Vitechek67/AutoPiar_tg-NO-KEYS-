@@ -41,10 +41,10 @@ def html_page(title: str, body: str) -> HTMLResponse:
         radial-gradient(circle at 80% 0%, rgba(255,159,252,.18), transparent 26%),
         linear-gradient(135deg, #05030D, #120B31 55%, #24106E);
     }}
-    main {{ max-width:1120px; margin:0 auto; padding:32px 18px; }}
+    main {{ max-width:1240px; margin:0 auto; padding:32px 18px; }}
     h1 {{ margin:0 0 8px; font-size:30px; letter-spacing:.2px; }}
     p {{ color:var(--muted); }}
-    .grid {{ display:grid; grid-template-columns:360px 1fr; gap:18px; align-items:start; }}
+    .grid {{ display:grid; grid-template-columns:360px minmax(0, 1fr); gap:18px; align-items:start; }}
     .card {{
       background:rgba(12,8,38,.86); border:1px solid rgba(255,159,252,.22);
       border-radius:22px; padding:18px; box-shadow:0 18px 70px rgba(0,0,0,.35);
@@ -59,12 +59,21 @@ def html_page(title: str, body: str) -> HTMLResponse:
       display:inline-block; border:0; cursor:pointer; text-decoration:none;
       margin-top:14px; padding:12px 16px; border-radius:14px; color:#100A24;
       font-weight:800; background:linear-gradient(90deg, var(--line), var(--pink));
+      white-space:nowrap;
     }}
-    table {{ width:100%; border-collapse:collapse; overflow:hidden; border-radius:18px; }}
-    th, td {{ text-align:left; padding:12px; border-bottom:1px solid rgba(255,255,255,.08); }}
+    .table-wrap {{ width:100%; overflow-x:auto; border-radius:18px; }}
+    table {{ width:100%; min-width:820px; border-collapse:collapse; }}
+    th, td {{ text-align:left; padding:12px; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:middle; }}
     th {{ color:#fff; background:rgba(82,39,255,.24); font-size:12px; }}
     td {{ color:#EAF1FF; font-size:13px; }}
-    code {{ color:var(--pink); word-break:break-all; }}
+    code {{ color:var(--pink); }}
+    .key-pill {{
+      display:inline-block; max-width:280px; overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; padding:7px 9px; border-radius:10px;
+      background:rgba(255,159,252,.08); border:1px solid rgba(255,159,252,.18);
+      font-family:Consolas, monospace;
+    }}
+    .actions {{ width:120px; text-align:right; }}
     .status-active {{ color:var(--green); font-weight:800; }}
     .status-revoked {{ color:var(--red); font-weight:800; }}
     .copy {{ user-select:all; }}
@@ -277,12 +286,12 @@ def admin_page(token: str = Query(default=""), created: str = Query(default=""))
             table_rows.append(
                 f"""
                 <tr>
-                  <td><code class="copy">{row['key']}</code></td>
+                  <td><code class="copy key-pill" title="{row['key']}">{row['key']}</code></td>
                   <td>{row['owner']}</td>
                   <td><span class="{status_class}">{row['status']}</span></td>
                   <td>{devices}/{row['max_devices']}</td>
                   <td>{row['expires_at']}</td>
-                  <td>{revoke if row['status'] == 'active' else ''}</td>
+                  <td class="actions">{revoke if row['status'] == 'active' else ''}</td>
                 </tr>
                 """
             )
@@ -333,10 +342,12 @@ def admin_page(token: str = Query(default=""), created: str = Query(default=""))
           </section>
           <section class="card">
             <h2 style="margin-top:0">Ключи</h2>
-            <table>
-              <thead><tr><th>Ключ</th><th>Клиент</th><th>Статус</th><th>Устройства</th><th>До</th><th></th></tr></thead>
-              <tbody>{rows_html}</tbody>
-            </table>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Ключ</th><th>Клиент</th><th>Статус</th><th>Устройства</th><th>До</th><th></th></tr></thead>
+                <tbody>{rows_html}</tbody>
+              </table>
+            </div>
           </section>
         </div>
         """,
