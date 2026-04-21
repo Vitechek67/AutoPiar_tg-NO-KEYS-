@@ -14,7 +14,7 @@ from typing import Optional
 PRODUCT_ID = "autopiar"
 APP_DATA_DIR_NAME = "AutoPiar"
 LICENSE_CONFIG_FILE = "online_license.json"
-EMBEDDED_LICENSE_SERVER_URL = ""
+EMBEDDED_LICENSE_SERVER_URL = "https://autopiar-production.up.railway.app"
 
 
 @dataclass
@@ -56,12 +56,13 @@ def load_license_config() -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         data = {}
+    configured_server_url = os.getenv("AUTOPIAR_LICENSE_SERVER_URL", "").strip()
+    if default_server_url:
+        server_url = configured_server_url or default_server_url
+    else:
+        server_url = configured_server_url or data.get("server_url") or ""
     return {
-        "server_url": str(
-            os.getenv("AUTOPIAR_LICENSE_SERVER_URL", "")
-            or data.get("server_url")
-            or default_server_url
-        ).strip(),
+        "server_url": str(server_url).strip(),
         "license_key": str(data.get("license_key") or os.getenv("AUTOPIAR_LICENSE_KEY", "")).strip(),
         "server_embedded": bool(default_server_url),
     }
