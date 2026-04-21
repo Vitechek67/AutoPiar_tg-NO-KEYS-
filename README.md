@@ -101,6 +101,22 @@ POST /api/activate
 https://your-domain.com
 ```
 
+Для клиентов адрес сервера лучше не показывать. После деплоя на Railway/VPS нужно зашить URL в `online_license.py`:
+
+```python
+EMBEDDED_LICENSE_SERVER_URL = "https://your-service.up.railway.app"
+```
+
+После этого пересобрать `dist/main.exe` и `release/AutoPiar.zip`. В таком режиме клиент видит только поле `Ключ`.
+
+Админ-панель для создания ключей:
+
+```text
+https://your-domain.com/admin
+```
+
+Для входа используется `LICENSE_ADMIN_TOKEN` из переменных хостинга.
+
 Для Termux можно задать переменные:
 
 ```bash

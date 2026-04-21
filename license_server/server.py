@@ -5,7 +5,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 
@@ -14,6 +15,65 @@ ADMIN_TOKEN = os.getenv("LICENSE_ADMIN_TOKEN", "")
 PRODUCT_ID = os.getenv("LICENSE_PRODUCT_ID", "autopiar")
 
 app = FastAPI(title="AutoPiar License Server", version="1.0.0")
+
+
+def html_page(title: str, body: str) -> HTMLResponse:
+    return HTMLResponse(
+        f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+    :root {{
+      --bg:#070512; --card:#100B2A; --card2:#171038; --line:#5227FF;
+      --pink:#FF9FFC; --text:#F4F7FF; --muted:#B9B3D8; --green:#39FF9A; --red:#FF4D7D;
+    }}
+    * {{ box-sizing:border-box; }}
+    body {{
+      margin:0; min-height:100vh; color:var(--text);
+      font-family:Segoe UI, Arial, sans-serif;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(82,39,255,.35), transparent 30%),
+        radial-gradient(circle at 80% 0%, rgba(255,159,252,.18), transparent 26%),
+        linear-gradient(135deg, #05030D, #120B31 55%, #24106E);
+    }}
+    main {{ max-width:1120px; margin:0 auto; padding:32px 18px; }}
+    h1 {{ margin:0 0 8px; font-size:30px; letter-spacing:.2px; }}
+    p {{ color:var(--muted); }}
+    .grid {{ display:grid; grid-template-columns:360px 1fr; gap:18px; align-items:start; }}
+    .card {{
+      background:rgba(12,8,38,.86); border:1px solid rgba(255,159,252,.22);
+      border-radius:22px; padding:18px; box-shadow:0 18px 70px rgba(0,0,0,.35);
+    }}
+    label {{ display:block; color:var(--muted); font-size:12px; margin:12px 0 6px; }}
+    input, select {{
+      width:100%; padding:13px 14px; border-radius:14px; outline:none;
+      border:1px solid rgba(82,39,255,.55); background:#070512; color:var(--text);
+    }}
+    input:focus {{ border-color:var(--pink); }}
+    button, .button {{
+      display:inline-block; border:0; cursor:pointer; text-decoration:none;
+      margin-top:14px; padding:12px 16px; border-radius:14px; color:#100A24;
+      font-weight:800; background:linear-gradient(90deg, var(--line), var(--pink));
+    }}
+    table {{ width:100%; border-collapse:collapse; overflow:hidden; border-radius:18px; }}
+    th, td {{ text-align:left; padding:12px; border-bottom:1px solid rgba(255,255,255,.08); }}
+    th {{ color:#fff; background:rgba(82,39,255,.24); font-size:12px; }}
+    td {{ color:#EAF1FF; font-size:13px; }}
+    code {{ color:var(--pink); word-break:break-all; }}
+    .status-active {{ color:var(--green); font-weight:800; }}
+    .status-revoked {{ color:var(--red); font-weight:800; }}
+    .copy {{ user-select:all; }}
+    @media (max-width: 860px) {{ .grid {{ grid-template-columns:1fr; }} table {{ display:block; overflow-x:auto; }} }}
+  </style>
+</head>
+<body>
+<main>{body}</main>
+</body>
+</html>"""
+    )
 
 
 class ActivateRequest(BaseModel):
@@ -110,9 +170,112 @@ def public_license_row(row: sqlite3.Row, devices: int = 0) -> dict:
     }
 
 
+def is_admin_token(token: str) -> bool:
+    return bool(ADMIN_TOKEN) and secrets.compare_digest(token or "", ADMIN_TOKEN)
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True, "date": date.today().isoformat()}
+
+
+@app.get("/", response_class=HTMLResponse)
+def index() -> HTMLResponse:
+    return html_page(
+        "AutoPiar License",
+        """
+        <h1>AutoPiar License Server</h1>
+        <p>Сервер работает. Для управления ключами откройте админ-панель.</p>
+        <a class="button" href="/admin">Открыть админ-панель</a>
+        """,
+    )
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(token: str = Query(default=""), created: str = Query(default="")) -> HTMLResponse:
+    if not is_admin_token(token):
+        error = ""
+        if token:
+            error = "<p style='color:var(--red);font-weight:800'>Неверный админ-токен.</p>"
+        return html_page(
+            "AutoPiar Admin",
+            f"""
+            <h1>Вход в админ-панель</h1>
+            <p>Введите `LICENSE_ADMIN_TOKEN`, который задан на хостинге.</p>
+            {error}
+            <form method="get" action="/admin" class="card" style="max-width:420px">
+              <label>Админ-токен</label>
+              <input name="token" type="password" placeholder="LICENSE_ADMIN_TOKEN" autofocus>
+              <button type="submit">Войти</button>
+            </form>
+            """,
+        )
+
+    init_db()
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM license_keys ORDER BY created_at DESC").fetchall()
+        table_rows = []
+        for row in rows:
+            devices = conn.execute("SELECT COUNT(*) FROM license_devices WHERE key = ?", (row["key"],)).fetchone()[0]
+            status_class = "status-active" if row["status"] == "active" else "status-revoked"
+            revoke = (
+                f"<form method='post' action='/admin/revoke' style='margin:0'>"
+                f"<input type='hidden' name='token' value='{token}'>"
+                f"<input type='hidden' name='license_key' value='{row['key']}'>"
+                f"<button type='submit' style='margin:0;padding:8px 10px'>Отозвать</button>"
+                f"</form>"
+            )
+            table_rows.append(
+                f"""
+                <tr>
+                  <td><code class="copy">{row['key']}</code></td>
+                  <td>{row['owner']}</td>
+                  <td><span class="{status_class}">{row['status']}</span></td>
+                  <td>{devices}/{row['max_devices']}</td>
+                  <td>{row['expires_at']}</td>
+                  <td>{revoke if row['status'] == 'active' else ''}</td>
+                </tr>
+                """
+            )
+
+    created_block = (
+        f"<div class='card' style='border-color:rgba(57,255,154,.45);margin-bottom:18px'>"
+        f"<p style='margin:0;color:var(--green);font-weight:800'>Создан ключ:</p>"
+        f"<code class='copy'>{created}</code></div>"
+        if created
+        else ""
+    )
+    rows_html = "\n".join(table_rows) or "<tr><td colspan='6'>Ключей пока нет.</td></tr>"
+    return html_page(
+        "AutoPiar Admin",
+        f"""
+        <h1>Панель лицензий AutoPiar</h1>
+        <p>Создавайте ключи, ограничивайте срок и количество устройств. Клиент вводит только ключ.</p>
+        {created_block}
+        <div class="grid">
+          <form method="post" action="/admin/create" class="card">
+            <input type="hidden" name="token" value="{token}">
+            <h2 style="margin-top:0">Создать ключ</h2>
+            <label>Клиент / заметка</label>
+            <input name="owner" value="client">
+            <label>Срок, дней</label>
+            <input name="days" type="number" min="1" max="3650" value="30">
+            <label>Лимит устройств</label>
+            <input name="max_devices" type="number" min="1" max="100" value="1">
+            <label>Тип</label>
+            <select name="license_type"><option value="user">user</option><option value="dev">dev</option></select>
+            <button type="submit">Создать ключ</button>
+          </form>
+          <section class="card">
+            <h2 style="margin-top:0">Ключи</h2>
+            <table>
+              <thead><tr><th>Ключ</th><th>Клиент</th><th>Статус</th><th>Устройства</th><th>До</th><th></th></tr></thead>
+              <tbody>{rows_html}</tbody>
+            </table>
+          </section>
+        </div>
+        """,
+    )
 
 
 @app.post("/api/activate")
@@ -198,6 +361,26 @@ def create_key(payload: CreateKeyRequest) -> dict:
     return {"ok": True, "license": public_license_row(row)}
 
 
+@app.post("/admin/create")
+def admin_create_key(
+    token: str = Form(...),
+    owner: str = Form(default="client"),
+    days: int = Form(default=30),
+    max_devices: int = Form(default=1),
+    license_type: str = Form(default="user"),
+):
+    if not is_admin_token(token):
+        raise HTTPException(status_code=401, detail="Invalid admin token.")
+    payload = CreateKeyRequest(
+        owner=owner,
+        days=days,
+        max_devices=max_devices,
+        license_type=license_type,
+    )
+    created = create_key(payload)["license"]["key"]
+    return RedirectResponse(url=f"/admin?token={token}&created={created}", status_code=303)
+
+
 @app.get("/admin/keys", dependencies=[Depends(require_admin)])
 def list_keys() -> dict:
     init_db()
@@ -217,3 +400,11 @@ def revoke_key(license_key: str) -> dict:
         conn.execute("UPDATE license_keys SET status = 'revoked' WHERE key = ?", (license_key,))
         conn.commit()
     return {"ok": True}
+
+
+@app.post("/admin/revoke")
+def admin_revoke_key(token: str = Form(...), license_key: str = Form(...)):
+    if not is_admin_token(token):
+        raise HTTPException(status_code=401, detail="Invalid admin token.")
+    revoke_key(license_key)
+    return RedirectResponse(url=f"/admin?token={token}", status_code=303)

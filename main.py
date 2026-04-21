@@ -2243,7 +2243,13 @@ class OnlineLicenseDialog(QtWidgets.QDialog):
 
         title = QtWidgets.QLabel("Проверка лицензии")
         title.setObjectName("licenseTitle")
-        subtitle = QtWidgets.QLabel("Введите адрес сервера лицензий и ключ. Без успешной проверки приложение не откроется.")
+        self.server_embedded = bool(config.get("server_embedded"))
+        subtitle_text = (
+            "Введите лицензионный ключ. Без успешной проверки приложение не откроется."
+            if self.server_embedded
+            else "Введите адрес сервера лицензий и ключ. Без успешной проверки приложение не откроется."
+        )
+        subtitle = QtWidgets.QLabel(subtitle_text)
         subtitle.setObjectName("licenseHint")
         subtitle.setWordWrap(True)
 
@@ -2253,7 +2259,8 @@ class OnlineLicenseDialog(QtWidgets.QDialog):
         self.in_server_url.setPlaceholderText("https://your-domain.com")
         self.in_key = QtWidgets.QLineEdit(config.get("license_key", ""))
         self.in_key.setPlaceholderText("AP-...")
-        form.addRow("Сервер:", self.in_server_url)
+        if not self.server_embedded:
+            form.addRow("Сервер:", self.in_server_url)
         form.addRow("Ключ:", self.in_key)
 
         self.lbl_status = QtWidgets.QLabel("Ожидание проверки.")
@@ -2357,7 +2364,8 @@ class OnlineLicenseDialog(QtWidgets.QDialog):
         server_url = self.in_server_url.text().strip()
         license_key = self.in_key.text().strip()
         if not server_url or not license_key:
-            self._set_status("Введите адрес сервера и лицензионный ключ.", False)
+            message = "Введите лицензионный ключ." if self.server_embedded else "Введите адрес сервера и лицензионный ключ."
+            self._set_status(message, False)
             return
 
         self.btn_check.setEnabled(False)
