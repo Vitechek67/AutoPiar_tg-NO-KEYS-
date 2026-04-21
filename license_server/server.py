@@ -6,7 +6,7 @@ import html as html_utils
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -410,6 +410,79 @@ def admin_url(token: str, **params) -> str:
     return "/admin?" + urlencode(query)
 
 
+def count_key_devices(conn: sqlite3.Connection, license_key: str) -> int:
+    return int(conn.execute("SELECT COUNT(*) FROM license_devices WHERE key = ?", (license_key,)).fetchone()[0])
+
+
+def find_or_merge_existing_device(
+    conn: sqlite3.Connection,
+    license_key: str,
+    device_id: str,
+    hostname: str,
+    platform_name: str,
+    now_s: str,
+) -> sqlite3.Row | None:
+    existing = conn.execute(
+        "SELECT * FROM license_devices WHERE key = ? AND device_id = ?",
+        (license_key, device_id),
+    ).fetchone()
+    if existing is not None:
+        return existing
+
+    host = (hostname or "").strip()
+    platform_value = (platform_name or "").strip()
+    if not host or host.lower() in {"localhost", "localhost.localdomain"} or not platform_value:
+        return None
+
+    matches = conn.execute(
+        """
+        SELECT * FROM license_devices
+        WHERE key = ? AND hostname = ? AND platform = ?
+        ORDER BY last_seen_at DESC
+        """,
+        (license_key, host, platform_value),
+    ).fetchall()
+    if not matches:
+        return None
+
+    keep = matches[0]
+    for duplicate in matches[1:]:
+        conn.execute(
+            "DELETE FROM license_devices WHERE key = ? AND device_id = ?",
+            (license_key, duplicate["device_id"]),
+        )
+
+    if keep["device_id"] != device_id:
+        conn.execute(
+            """
+            UPDATE license_devices
+            SET device_id = ?, hostname = ?, platform = ?, last_seen_at = ?
+            WHERE key = ? AND device_id = ?
+            """,
+            (device_id, host, platform_value, now_s, license_key, keep["device_id"]),
+        )
+        return conn.execute(
+            "SELECT * FROM license_devices WHERE key = ? AND device_id = ?",
+            (license_key, device_id),
+        ).fetchone()
+
+    return keep
+
+
+def revoke_license_key(license_key: str) -> dict:
+    init_db()
+    with connect() as conn:
+        cursor = conn.execute("UPDATE license_keys SET status = 'revoked' WHERE key = ?", (license_key,))
+        if cursor.rowcount != 1:
+            raise HTTPException(status_code=404, detail="License key not found.")
+        conn.commit()
+    try:
+        create_sqlite_backup("revoke_key")
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @app.get("/health")
 def health() -> dict:
     return {"ok": True, "date": date.today().isoformat()}
@@ -470,16 +543,16 @@ def admin_page(token: str = Query(default=""), created: str = Query(default=""))
         revoked_count = 0
         device_total = 0
         for index, row in enumerate(rows):
-            devices = conn.execute("SELECT COUNT(*) FROM license_devices WHERE key = ?", (row["key"],)).fetchone()[0]
+            devices = count_key_devices(conn, row["key"])
             device_total += int(devices)
             is_active = row["status"] == "active"
             active_count += 1 if is_active else 0
             revoked_count += 0 if is_active else 1
             status_class = "status-active" if is_active else "status-revoked"
+            revoke_action = "/admin/revoke/" + quote(str(row["key"]), safe="")
             revoke = (
-                f"<form method='post' action='/admin/revoke' style='margin:0'>"
+                f"<form method='post' action='{revoke_action}' style='margin:0'>"
                 f"<input type='hidden' name='token' value='{ha(token)}'>"
-                f"<input type='hidden' name='license_key' value='{ha(row['key'])}'>"
                 f"<button class='button danger' type='submit' style='margin:0;padding:10px 12px'>Отозвать</button>"
                 f"</form>"
             )
@@ -613,13 +686,15 @@ def activate(payload: ActivateRequest) -> dict:
         if parse_utc(row["expires_at"]) < now:
             return {"ok": False, "message": "Срок действия ключа истёк."}
 
-        existing = conn.execute(
-            "SELECT * FROM license_devices WHERE key = ? AND device_id = ?",
-            (key, payload.device_id),
-        ).fetchone()
-        device_count = int(
-            conn.execute("SELECT COUNT(*) FROM license_devices WHERE key = ?", (key,)).fetchone()[0]
+        existing = find_or_merge_existing_device(
+            conn,
+            key,
+            payload.device_id,
+            payload.hostname,
+            payload.platform,
+            now_s,
         )
+        device_count = count_key_devices(conn, key)
 
         if existing is None and device_count >= int(row["max_devices"]):
             return {"ok": False, "message": "Превышен лимит устройств для ключа."}
@@ -758,27 +833,19 @@ def list_keys() -> dict:
         rows = conn.execute("SELECT * FROM license_keys ORDER BY created_at DESC").fetchall()
         result = []
         for row in rows:
-            devices = conn.execute("SELECT COUNT(*) FROM license_devices WHERE key = ?", (row["key"],)).fetchone()[0]
+            devices = count_key_devices(conn, row["key"])
             result.append(public_license_row(row, devices))
     return {"ok": True, "licenses": result}
 
 
 @app.post("/admin/keys/{license_key}/revoke", dependencies=[Depends(require_admin)])
 def revoke_key(license_key: str) -> dict:
-    init_db()
-    with connect() as conn:
-        conn.execute("UPDATE license_keys SET status = 'revoked' WHERE key = ?", (license_key,))
-        conn.commit()
-    try:
-        create_sqlite_backup("revoke_key")
-    except Exception:
-        pass
-    return {"ok": True}
+    return revoke_license_key(license_key)
 
 
-@app.post("/admin/revoke")
-def admin_revoke_key(token: str = Form(...), license_key: str = Form(...)):
+@app.post("/admin/revoke/{license_key}")
+def admin_revoke_key(license_key: str, token: str = Form(...)):
     if not is_admin_token(token):
         raise HTTPException(status_code=401, detail="Invalid admin token.")
-    revoke_key(license_key)
+    revoke_license_key(license_key)
     return RedirectResponse(url=admin_url(token), status_code=303)

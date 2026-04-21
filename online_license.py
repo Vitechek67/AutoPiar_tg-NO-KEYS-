@@ -14,6 +14,7 @@ from typing import Optional
 PRODUCT_ID = "autopiar"
 APP_DATA_DIR_NAME = "AutoPiar"
 LICENSE_CONFIG_FILE = "online_license.json"
+DEVICE_ID_FILE = "device_id.txt"
 EMBEDDED_LICENSE_SERVER_URL = "https://autopiar-production.up.railway.app"
 
 
@@ -86,6 +87,14 @@ def normalize_server_url(server_url: str) -> str:
 
 
 def get_device_id() -> str:
+    path = app_data_dir() / DEVICE_ID_FILE
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    except Exception:
+        pass
+
     parts = [
         platform.system(),
         platform.release(),
@@ -93,9 +102,15 @@ def get_device_id() -> str:
         platform.node() or socket.gethostname(),
         str(uuid.getnode()),
         os.environ.get("USERNAME") or os.environ.get("USER") or "",
+        uuid.uuid4().hex,
     ]
     raw = "|".join(parts).encode("utf-8", errors="ignore")
-    return hashlib.sha256(raw).hexdigest()
+    device_id = hashlib.sha256(raw).hexdigest()
+    try:
+        path.write_text(device_id, encoding="utf-8")
+    except Exception:
+        pass
+    return device_id
 
 
 def verify_online_license(
