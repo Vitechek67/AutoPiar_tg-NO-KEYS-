@@ -31,11 +31,9 @@ def load_public_key_from_b64(public_key_b64: str) -> Ed25519PublicKey:
 def load_private_key_from_file(path: str) -> Ed25519PrivateKey:
     data = Path(path).read_bytes()
 
-    # Raw 32-byte Ed25519 private key (binary file)
     if len(data) == 32:
         return Ed25519PrivateKey.from_private_bytes(data)
 
-    # Base64 encoded raw 32-byte key
     try:
         raw = base64.b64decode(data.decode("utf-8").strip(), validate=True)
         if len(raw) == 32:
@@ -43,7 +41,6 @@ def load_private_key_from_file(path: str) -> Ed25519PrivateKey:
     except Exception:
         pass
 
-    # PEM private key
     try:
         key = serialization.load_pem_private_key(data, password=None)
     except Exception as exc:

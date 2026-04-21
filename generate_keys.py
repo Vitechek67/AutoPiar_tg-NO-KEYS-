@@ -6,7 +6,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 priv = Ed25519PrivateKey.generate()
 pub = priv.public_key()
 
-# Приватный в PEM (для генератора лицензий, хранить только у себя)
 pem = priv.private_bytes(
     encoding=serialization.Encoding.PEM,
     format=serialization.PrivateFormat.PKCS8,
@@ -15,7 +14,6 @@ pem = priv.private_bytes(
 with open("private.key", "wb") as f:
     f.write(pem)
 
-# Публичный в base64 raw 32 bytes (вставляется в main.py)
 pub_raw = pub.public_bytes(
     encoding=serialization.Encoding.Raw,
     format=serialization.PublicFormat.Raw,

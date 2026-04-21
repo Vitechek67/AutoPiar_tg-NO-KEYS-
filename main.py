@@ -19,7 +19,6 @@ def _configure_qt_plugin_path():
     if os.name != "nt":
         return
 
-    # Keep explicit non-empty user config, but fix empty values.
     current = os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH")
     if current and os.path.isfile(os.path.join(current, "qwindows.dll")):
         return
@@ -202,9 +201,7 @@ def parse_tg_emoji_html(text: str):
     return "".join(parts), entities
 
 
-# -----------------------------
-# Настройки проекта (ОБЯЗАТЕЛЬНО заполнить)
-# -----------------------------
+# Настройки проекта 
 API_ID = 0          # заполняется через "API настройки" или локальный app data
 API_HASH = ""       # заполняется через "API настройки" или локальный app data
 
@@ -246,9 +243,6 @@ def parse_import_target(value: str) -> str:
     return raw
 
 
-# -----------------------------
-# Data models
-# -----------------------------
 @dataclass
 class ChatItem:
     title: str
@@ -269,19 +263,16 @@ class ForumTopicItem:
     title: str
 
 
-# -----------------------------
-# Worker: Telethon + asyncio in QThread
-# -----------------------------
 class TelethonWorker(QtCore.QObject):
     # Сигналы -> GUI
     log = QtCore.pyqtSignal(str)
-    auth_state = QtCore.pyqtSignal(str)              # "need_phone" | "need_code" | "need_password" | "authorized" | "error"
-    qr_login_ready = QtCore.pyqtSignal(str, int)     # qr_url, expires_unix_ts
+    auth_state = QtCore.pyqtSignal(str)              
+    qr_login_ready = QtCore.pyqtSignal(str, int)     
     account_info = QtCore.pyqtSignal(dict)
-    folders_loaded = QtCore.pyqtSignal(list)         # List[{"id": int, "title": str, "count": int}]
-    chats_loaded = QtCore.pyqtSignal(list)           # List[ChatItem]
-    forum_topics_loaded = QtCore.pyqtSignal(list)    # List[ForumTopicItem]
-    sending_state = QtCore.pyqtSignal(bool)          # True when sending, False otherwise
+    folders_loaded = QtCore.pyqtSignal(list)         
+    chats_loaded = QtCore.pyqtSignal(list)           
+    forum_topics_loaded = QtCore.pyqtSignal(list)    
+    sending_state = QtCore.pyqtSignal(bool)          
 
     def __init__(self, api_id: int, api_hash: str, session_path: str):
         super().__init__()
@@ -301,7 +292,6 @@ class TelethonWorker(QtCore.QObject):
         self._sending_task: Optional[asyncio.Task] = None
 
 
-    # --- Thread lifecycle ---
     @QtCore.pyqtSlot()
     def start(self):
         """
@@ -340,7 +330,6 @@ class TelethonWorker(QtCore.QObject):
         Инициализируем TelegramClient с файловой сессией.
         """
         try:
-            # Telethon сам создаст/прочитает session файл
             self._client = TelegramClient(self.session_path, self.api_id, self.api_hash)
             await self._client.connect()
 
@@ -361,7 +350,6 @@ class TelethonWorker(QtCore.QObject):
             return False
         return True
 
-    # --- Public API (called from GUI thread via run_coroutine_threadsafe) ---
     def request_code(self, phone: str):
         if not self._ensure_ready():
             return
@@ -460,8 +448,6 @@ class TelethonWorker(QtCore.QObject):
 
         try:
             self.log.emit("🔐 Выполняю вход по коду…")
-            # phone_code_hash можно не передавать — Telethon сам подхватит из send_code_request,
-            # но оставим как явную опцию при наличии.
             if self._phone_code_hash:
                 await self._client.sign_in(phone=self._phone, code=code, phone_code_hash=self._phone_code_hash)
             else:
@@ -549,12 +535,10 @@ class TelethonWorker(QtCore.QObject):
                 ent = d.entity
                 title = d.name or getattr(ent, "title", None) or getattr(ent, "first_name", "") or "Без названия"
 
-                # Универсально получаем peer_id
                 peer_id = getattr(ent, "id", None)
                 if peer_id is None:
                     continue
 
-                # Примерные флаги
                 is_user = ent.__class__.__name__.lower().endswith("user")
                 is_channel = ent.__class__.__name__.lower().endswith("channel")
                 is_group = ("chat" in ent.__class__.__name__.lower()) or (is_channel and getattr(ent, "megagroup", False))
@@ -893,13 +877,9 @@ class TelethonWorker(QtCore.QObject):
 
     @staticmethod
     def _silent_callback(_fut):
-        # Ничего не делаем: ошибки логируются внутри корутин
         pass
 
 
-# -----------------------------
-# GUI
-# -----------------------------
 class NeonMainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
@@ -913,9 +893,7 @@ class NeonMainWindow(QtWidgets.QMainWindow):
                 "Откройте настройки API и заполните API_ID и API_HASH.\n"
                 "Telegram API можно получить на my.telegram.org"
             )
-            # не выходим насильно — пусть пользователь увидит интерфейс, но функционал будет ограничен
 
-        # --- Worker thread ---
         session_path = os.path.join(runtime_base_dir(), DEFAULT_SESSION_NAME)
 
         self.worker = TelethonWorker(self.api_id, self.api_hash, session_path)
@@ -932,7 +910,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         self.worker.forum_topics_loaded.connect(self.on_forum_topics_loaded)
         self.worker.sending_state.connect(self.on_sending_state)
 
-        # --- UI build ---
         central = QtWidgets.QWidget()
         central.setObjectName("centralWidget")
         self.setCentralWidget(central)
@@ -941,7 +918,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(14)
 
-        # Left panel: auth + chats
         left = QtWidgets.QVBoxLayout()
         left.setSpacing(12)
 
@@ -954,7 +930,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         self.chats_group = self._build_chats_group()
         left.addWidget(self.chats_group, 1)
 
-        # Right panel: forum topics + sender + logs
         right = QtWidgets.QVBoxLayout()
         right.setSpacing(12)
 
@@ -972,7 +947,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
 
         self._apply_neon_theme()
 
-        # initial state
         self._set_auth_inputs(phone=True, code=False, password=False)
         self.btn_load_chats.setEnabled(False)
         self.btn_start.setEnabled(False)
@@ -999,7 +973,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         self.thread.start()
 
 
-    # --- UI sections ---
     def _load_json_file(self, path: str, default):
         try:
             if not os.path.exists(path):
@@ -1355,7 +1328,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         return g
 
     def _apply_neon_theme(self):
-        # Softer neon look with cleaner lists and scrollbars.
         self.setStyleSheet("""
             QWidget {
                 color: #EAF1FF;
@@ -1556,7 +1528,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
             }
         """)
 
-    # --- Auth UI state helpers ---
     def _set_auth_inputs(self, phone: bool, code: bool, password: bool):
         self.in_phone.setEnabled(phone)
         self.btn_send_code.setEnabled(phone)
@@ -1750,7 +1721,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         self._qr_dialog.raise_()
         self._qr_dialog.activateWindow()
 
-    # --- Slots: worker -> GUI ---
     @QtCore.pyqtSlot(str)
     def append_log(self, text: str):
         self.txt_log.appendPlainText(text)
@@ -1869,7 +1839,7 @@ class NeonMainWindow(QtWidgets.QMainWindow):
                 self._qr_dialog.close()
         elif state == "error":
             self._set_account_status(False)
-            # дадим пользователю попробовать снова
+            # даем пользователю попробовать снова
             self._set_auth_inputs(phone=True, code=True, password=True)
             self.btn_load_chats.setEnabled(False)
 
@@ -1940,7 +1910,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         self.list_forum_topics.setEnabled(not is_sending)
         self._sync_start_button()
 
-    # --- UI actions: GUI -> worker ---
     def ui_send_code(self):
         phone = self.in_phone.text().strip()
         if not phone:
@@ -2147,7 +2116,6 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         targets = []
         seen = set()
 
-        # Always include selected chats
         selected_rows = sorted({idx.row() for idx in self.list_chats.selectedIndexes()})
         for row in selected_rows:
             if 0 <= row < len(self._visible_chat_items):
@@ -2162,11 +2130,9 @@ class NeonMainWindow(QtWidgets.QMainWindow):
                     "label": str(chat.title),
                 })
 
-        # If a topic is selected, include it too (in addition to chats)
         topic_row = self.list_forum_topics.currentRow()
         if 0 <= topic_row < len(self._forum_topic_items):
             topic = self._forum_topic_items[topic_row]
-            # If a specific topic is selected for this chat, prefer topic target over plain chat target.
             plain_key = (int(topic.chat_peer_id), None)
             if plain_key in seen:
                 seen.remove(plain_key)
@@ -2222,7 +2188,7 @@ class NeonMainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
-        # Ждём чуть-чуть закрытия потока (не блокируем долго)
+        # Ждем чут чут закрытия потока (не блокируем долго)
         self.thread.quit()
         self.thread.wait(1500)
         event.accept()
@@ -2245,7 +2211,7 @@ class OnlineLicenseDialog(QtWidgets.QDialog):
         title.setObjectName("licenseTitle")
         self.server_embedded = bool(config.get("server_embedded"))
         subtitle_text = (
-            "Введите лицензионный ключ. Без успешной проверки приложение не откроется."
+            "Введите лицензионный ключ который получили при покупке. Без успешной проверки приложение не откроется."
             if self.server_embedded
             else "Введите адрес сервера лицензий и ключ. Без успешной проверки приложение не откроется."
         )

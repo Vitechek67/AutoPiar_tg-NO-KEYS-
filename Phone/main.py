@@ -157,7 +157,7 @@ def ask_indexes(prompt: str, max_count: int) -> list[int]:
 
 def read_message() -> str:
     section("Текст сообщения")
-    info("Вставьте текст сообщения. Завершите ввод строкой /done")
+    info("Вставьте текст сообщения. Напишите /done на новой строке и нажмите Enter чтобы запустить отправку.")
     lines = []
     while True:
         line = input()
@@ -181,7 +181,7 @@ def print_qr_login_url(url: str):
         qr.print_ascii(invert=True)
         print()
     except Exception:
-        warn("Модуль qrcode недоступен, откройте ссылку вручную или установите qrcode.")
+        warn("Модуль qr-code недоступен, откройте ссылку вручную или установите qrcode.")
 
 
 async def ensure_login(client: TelegramClient):
@@ -216,7 +216,7 @@ async def ensure_login(client: TelegramClient):
                 error(f"Ошибка QR-входа: {type(exc).__name__}: {exc}")
             continue
 
-        phone = ask("Телефон в формате +79991234567")
+        phone = ask("Телефон в формате +хххххххххх")
         if not phone:
             warn("Номер пуст.")
             continue
